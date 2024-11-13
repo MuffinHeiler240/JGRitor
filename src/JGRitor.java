@@ -1,8 +1,17 @@
+import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatLaf;
+
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.undo.CannotRedoException;
+import javax.swing.undo.CannotUndoException;
+import javax.swing.undo.UndoManager;
+import javax.swing.event.UndoableEditEvent;
+import javax.swing.event.UndoableEditListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
 import java.io.*;
 import java.util.ArrayList;
 
@@ -12,12 +21,11 @@ public class JGRitor  extends JFrame implements ActionListener {
     private ArrayList<Boolean> IsNew;
     private ArrayList<Boolean> HasChanges;
     private ArrayList<JLabel> tabTitleLabels = new ArrayList<>();
+    private ArrayList<UndoManager> undoManagers = new ArrayList<>();
 
 
     public JGRitor() {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch(Exception ignored){}
+
         // Setup frame
         setTitle("JGRiotr");
         setSize(800, 600);
@@ -39,50 +47,116 @@ public class JGRitor  extends JFrame implements ActionListener {
         JMenu fileMenu = new JMenu("File");
         menuBar.add(fileMenu);
 
-        JMenuItem newItem = new JMenuItem("New");
+        JMenuItem newItem = new JMenuItem("<html>New    <span style='color:gray;'>Ctrl+N</span></html>");
         newItem.addActionListener(this);
+        newItem.setIcon( new ImageIcon(new ImageIcon(getClass().getResource("/resources/new.png")).getImage().getScaledInstance(16, 16, Image.SCALE_SMOOTH)));
         fileMenu.add(newItem);
 
-        JMenuItem openItem = new JMenuItem("Open");
+        JMenuItem openItem = new JMenuItem("<html>Open  <span style='color:gray;'>Ctrl+O</span></html>");
         openItem.addActionListener(this);
+        openItem.setIcon( new ImageIcon(new ImageIcon(getClass().getResource("/resources/open.png")).getImage().getScaledInstance(16, 16, Image.SCALE_SMOOTH)));
         fileMenu.add(openItem);
 
-        JMenuItem saveItem = new JMenuItem("Save");
+        JMenuItem saveItem = new JMenuItem("<html>Save  <span style='color:gray;'>Ctrl+S</span></html>");
         saveItem.addActionListener(this);
         fileMenu.add(saveItem);
 
-        JMenuItem saveAsItem = new JMenuItem("Save As");
+        JMenuItem saveAsItem = new JMenuItem("<html>Save As <span style='color:gray;'>Ctrl+Alt+S</span></html>");
         saveAsItem.addActionListener(this);
         fileMenu.add(saveAsItem);
 
-        JMenuItem exitItem = new JMenuItem("Exit");
+        fileMenu.add(new JToolBar.Separator());
+
+        JMenuItem exitItem = new JMenuItem("<html>Exit  <span style='color:gray;'>Ctrl+W</span></html>");
         exitItem.addActionListener(this);
         fileMenu.add(exitItem);
 
         JMenu editMenu = new JMenu("Edit");
         menuBar.add(editMenu);
 
-        JMenuItem cutItem = new JMenuItem("Cut");
+        JMenuItem undoItem = new JMenuItem("<html>Undo    <span style='color:gray;'>Ctrl+Z</span></html>");
+        undoItem.addActionListener(this);
+        undoItem.setIcon( new ImageIcon(new ImageIcon(getClass().getResource("/resources/undo.png")).getImage().getScaledInstance(16, 16, Image.SCALE_SMOOTH)));
+        editMenu.add(undoItem);
+
+        JMenuItem redoItem = new JMenuItem("<html>Redo    <span style='color:gray;'>Ctrl+Y</span></html>");
+        redoItem.addActionListener(this);
+        redoItem.setIcon( new ImageIcon(new ImageIcon(getClass().getResource("/resources/redo.png")).getImage().getScaledInstance(16, 16, Image.SCALE_SMOOTH)));
+        editMenu.add(redoItem);
+
+        editMenu.add(new JToolBar.Separator());
+
+        JMenuItem cutItem = new JMenuItem("<html>Cut    <span style='color:gray;'>Ctrl+X</span></html>");
         cutItem.addActionListener(this);
         editMenu.add(cutItem);
 
-        JMenuItem copyItem = new JMenuItem("Copy");
+        JMenuItem copyItem = new JMenuItem("<html>Copy  <span style='color:gray;'>Ctrl+C</span></html>");
         copyItem.addActionListener(this);
         editMenu.add(copyItem);
 
-        JMenuItem pasteItem = new JMenuItem("Paste");
+        JMenuItem pasteItem = new JMenuItem("<html>Paste    <span style='color:gray;'>Ctrl+V</span></html>");
         pasteItem.addActionListener(this);
         editMenu.add(pasteItem);
 
-        KeyStroke saveKeyStroke = KeyStroke.getKeyStroke("control S");
+
+
         InputMap inputMap = tabbedPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         ActionMap actionMap = tabbedPane.getActionMap();
 
+        KeyStroke saveKeyStroke = KeyStroke.getKeyStroke("control S");
         inputMap.put(saveKeyStroke, "save");
         actionMap.put("save", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 saveFile();
+            }
+        });
+
+        inputMap.put(KeyStroke.getKeyStroke("control alt S"), "saveas");
+        actionMap.put("saveas", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                saveFileAs();
+            }
+        });
+
+        inputMap.put(KeyStroke.getKeyStroke("control N"), "new");
+        actionMap.put("new", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                createNewTab();
+            }
+        });
+
+        inputMap.put(KeyStroke.getKeyStroke("control O"), "open");
+        actionMap.put("open", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                openFile();
+            }
+        });
+
+        inputMap.put(KeyStroke.getKeyStroke("control W"), "exit");
+        actionMap.put("exit", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                System.exit(0);
+            }
+        });
+
+        inputMap.put(KeyStroke.getKeyStroke("control Z"), "undo");
+        actionMap.put("undo", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                undo();
+            }
+        });
+
+        inputMap.put(KeyStroke.getKeyStroke("control Y"), "redo");
+        actionMap.put("redo", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                redo();
             }
         });
 
@@ -93,29 +167,35 @@ public class JGRitor  extends JFrame implements ActionListener {
     public void actionPerformed(ActionEvent e) {
         String command = e.getActionCommand();
         switch (command) {
-            case "New":
+            case "<html>New    <span style='color:gray;'>Ctrl+N</span></html>":
                 createNewTab();
                 break;
-            case "Open":
+            case "<html>Open  <span style='color:gray;'>Ctrl+O</span></html>":
                 openFile();
                 break;
-            case "Save":
+            case "<html>Save  <span style='color:gray;'>Ctrl+S</span></html>":
                 saveFile();
                 break;
-            case "Save As":
+            case "<html>Save As <span style='color:gray;'>Ctrl+Alt+S</span></html>":
                 saveFileAs();
                 break;
-            case "Exit":
+            case "<html>Exit  <span style='color:gray;'>Ctrl+W</span></html>":
                 System.exit(0);
                 break;
-            case "Cut":
+            case "<html>Cut    <span style='color:gray;'>Ctrl+X</span></html>":
                 getCurrentTextArea().cut();
                 break;
-            case "Copy":
+            case "<html>Copy    <span style='color:gray;'>Ctrl+C</span></html>":
                 getCurrentTextArea().copy();
                 break;
-            case "Paste":
+            case "<html>Paste    <span style='color:gray;'>Ctrl+V</span></html>":
                 getCurrentTextArea().paste();
+                break;
+            case "<html>Undo    <span style='color:gray;'>Ctrl+Z</span></html>":
+                undo();
+                break;
+            case "<html>Redo    <span style='color:gray;'>Ctrl+Y</span></html>":
+                redo();
                 break;
         }
     }
@@ -127,6 +207,39 @@ public class JGRitor  extends JFrame implements ActionListener {
         int index = IsNew.size() - 1;
         IsNew.set(index, true);
         addDocumentListener(textArea, index);
+
+        // Add an UndoManager for each new tab
+        UndoManager undoManager = new UndoManager();
+        undoManagers.add(undoManager);
+        textArea.getDocument().addUndoableEditListener(e -> undoManager.addEdit(e.getEdit()));
+    }
+
+    private void undo() {
+        int index = tabbedPane.getSelectedIndex();
+        if (index == -1 || index >= undoManagers.size()) return;
+
+        UndoManager undoManager = undoManagers.get(index);
+        if (undoManager.canUndo()) {
+            try {
+                undoManager.undo();
+            } catch (CannotUndoException ex) {
+                ex.printStackTrace();
+            }
+        }
+    }
+
+    private void redo() {
+        int index = tabbedPane.getSelectedIndex();
+        if (index == -1 || index >= undoManagers.size()) return;
+
+        UndoManager undoManager = undoManagers.get(index);
+        if (undoManager.canRedo()) {
+            try {
+                undoManager.redo();
+            } catch (CannotRedoException ex) {
+                ex.printStackTrace();
+            }
+        }
     }
 
     private void openFile() {
@@ -199,6 +312,8 @@ public class JGRitor  extends JFrame implements ActionListener {
         tabbedPane.addTab(title, scrollPane);
         tabbedPane.setTabComponentAt(tabbedPane.getTabCount() - 1, tabPanel);
         tabbedPane.setSelectedComponent(scrollPane);
+
+
     }
 
 
